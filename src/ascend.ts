@@ -13,6 +13,7 @@ import {
   getPermedSkills,
   toSkill,
 } from "kolmafia";
+import { MoonSign, signNameToId } from "./moonSign";
 import { get } from "./property";
 import { ChateauMantegna } from "./resources";
 import { $item, $items, $stat } from "./template-string";
@@ -48,28 +49,7 @@ export function permedSkills(): Map<Skill, Lifestyle> {
   );
 }
 
-export class AscendError extends Error {
-  cause?: Skill | Item | Class | Path | string;
-  constructor(cause?: Skill | Item | Class | Path | string) {
-    if (!cause) {
-      super("Failed to ascend--do you have a pending trade offer?");
-    } else if (cause instanceof Skill) {
-      const reason = cause.permable
-        ? haveSkill(cause)
-          ? "too karmaically expensive"
-          : "not a skill you currently know"
-        : "unpermable";
-      super(`Skill ${cause} is ${reason}!`);
-    } else if (cause instanceof Item) {
-      super(`Invalid astral item: ${cause}!`);
-    } else if (cause instanceof Class) {
-      super(`Invalid class ${cause} for this path!`);
-    } else if (cause instanceof Path) {
-      super(`Invalid path ${cause}!`);
-    } else super(cause);
-    this.cause = cause;
-  }
-}
+export class AscendError extends Error {}
 
 const gardens = [
   "packet of pumpkin seeds",
@@ -128,20 +108,6 @@ export class AscensionPrepError extends Error {
   }
 }
 
-const MoonSigns = [
-  "Mongoose",
-  "Wallaby",
-  "Vole",
-  "Platypus",
-  "Opossum",
-  "Marmot",
-  "Wombat",
-  "Blender",
-  "Packrat",
-] as const;
-
-type MoonSign = typeof MoonSigns[number];
-
 type InputMoonSign =
   | number
   | Lowercase<MoonSign>
@@ -155,22 +121,6 @@ type InputMoonSign =
   | "gnomads"
   | "gnomish"
   | "gnomish gnomads camp";
-
-/**
- * @param moon Moon sign name
- * @returns Moon sign id else 0
- */
-export function signNameToId(moon: MoonSign): number {
-  return MoonSigns.indexOf(moon) + 1;
-}
-
-/**
- * @param id Moon sign id
- * @returns Name of moon sign else "None"
- */
-export function signIdToName(id: number): MoonSign | "None" {
-  return MoonSigns[id - 1] || "None";
-}
 
 /**
  * Determine the id of the appropriate moon sign.
@@ -266,6 +216,9 @@ export function ascend(options: {
     consumable: $item`astral six-pack`,
     pet: $item`none`,
   };
+  const prunedOptions = Object.fromEntries(
+    Object.entries(options).filter(([, value]) => value)
+  ) as typeof options;
   const {
     path,
     playerClass,
@@ -275,12 +228,12 @@ export function ascend(options: {
     consumable,
     pet,
     permOptions,
-  } = { ...DEFAULT_OPTIONS, ...options };
+  } = { ...DEFAULT_OPTIONS, ...prunedOptions };
 
   if (playerClass.path !== (path.avatar ? path : Path.none)) {
-    throw new AscendError(playerClass);
+    throw new AscendError(`Invalid class ${playerClass} for this path!`);
   }
-  if (path.id < 0) throw new AscendError(path);
+  if (path.id < 0) throw new AscendError(`Invalid path: ${path}!`);
 
   const moonId = inputToMoonId(moon, playerClass);
   if (moonId < 1 || moonId > 9) throw new Error(`Invalid moon ${moon}`);
@@ -290,7 +243,7 @@ export function ascend(options: {
       consumable
     )
   ) {
-    throw new AscendError(consumable);
+    throw new AscendError(`Invalid astral consumable: ${consumable}`);
   }
 
   if (
@@ -298,23 +251,38 @@ export function ascend(options: {
       pet
     )
   ) {
-    throw new AscendError(pet);
+    throw new AscendError(`Invalid astral pet: ${pet}`);
   }
 
-  const illegalSkill = permOptions
-    ? Array.from(permOptions.permSkills.keys()).find(
-        (skill) => !skill.permable || !haveSkill(skill)
-      )
-    : undefined;
-  if (illegalSkill) {
-    throw new AscendError(illegalSkill);
+  const unownedSkills = [...(permOptions?.permSkills.keys() ?? [])].filter(
+    (skill) => !haveSkill(skill)
+  );
+  if (unownedSkills.length) {
+    throw new AscendError(
+      `You're trying to perm the following skills, but don't actually have them: ${unownedSkills.join(
+        ", "
+      )}`
+    );
+  }
+
+  const unpermableSkills = [...(permOptions?.permSkills.keys() ?? [])].filter(
+    (skill) => !skill.permable
+  );
+  if (unpermableSkills.length) {
+    throw new AscendError(
+      `You're trying to perm the following skills, but they're unpermable: ${unownedSkills.join(
+        ", "
+      )}`
+    );
   }
 
   if (!isInValhalla()) {
     visitUrl("ascend.php?action=ascend&confirm=on&confirm2=on");
   }
   if (!isInValhalla()) {
-    throw new AscendError();
+    throw new AscendError(
+      "Failed to ascend--do you have a pending trade offer?"
+    );
   }
 
   visitUrl("afterlife.php?action=pearlygates");
@@ -338,7 +306,10 @@ export function ascend(options: {
       if (prospectivePermLevel > currentPermLevel) {
         const expectedKarma = 100 * (prospectivePermLevel - currentPermLevel);
         if (karma < expectedKarma) {
-          if (!permOptions.neverAbort) throw new AscendError(skill);
+          if (!permOptions.neverAbort)
+            throw new AscendError(
+              `Skill ${skill} is too karmaically expensive!`
+            );
           continue;
         }
         karma -= expectedKarma;

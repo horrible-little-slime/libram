@@ -32,6 +32,7 @@ type RawDiet<T> = RawDietEntry<T>[];
 type ConsumptionModifiers = {
   forkMug: boolean;
   seasoning: boolean;
+  whetStone: boolean;
   mayoflex: boolean;
   refinedPalate: boolean;
   garish: boolean;
@@ -91,6 +92,7 @@ function expectedAdventures(
       if (itemType(item) === "food" && modifiers.mayoflex) adventures++;
       if (itemType(item) === "food" && modifiers.seasoning)
         adventures += seasoningAdventures;
+      if (itemType(item) === "food" && modifiers.whetStone) adventures++;
       return adventures;
     }) / interpolated.length
   );
@@ -185,6 +187,28 @@ export class MenuItem<T> {
         { maximum: get("deepDishOfLegendEaten") ? 0 : 1 },
       ],
       [$item`Pizza of Legend`, { maximum: get("pizzaOfLegendEaten") ? 0 : 1 }],
+      [
+        $item`jar of fermented pickle juice`,
+        { maximum: get("_pickleJuiceDrunk") ? 0 : 1 },
+      ],
+      [
+        $item`extra-greasy slider`,
+        { maximum: get("_extraGreasySliderEaten") ? 0 : 1 },
+      ],
+      [$item`voodoo snuff`, { maximum: get("_voodooSnuffUsed") ? 0 : 1 }],
+      [
+        $item`Ol' Scratch's salad fork`,
+        { maximum: get("_saladForkUsed") ? 0 : 1 },
+      ],
+      [$item`Frosty's frosty mug`, { maximum: get("_frostyMugUsed") ? 0 : 1 }],
+      [
+        $item`tin cup of mulligan stew`,
+        { maximum: get("_mulliganStewEaten") ? 0 : 1 },
+      ],
+      [
+        $item`Hodgman's blanket`,
+        { maximum: get("_hodgmansBlanketDrunk") ? 0 : 1 },
+      ],
     ] as [Item, MenuItemOptions<T>][]);
   }
 
@@ -271,6 +295,7 @@ class DietPlanner<T> {
   fork?: MenuItem<T>;
   mug?: MenuItem<T>;
   seasoning?: MenuItem<T>;
+  whetStone?: MenuItem<T>;
   spleenValue = 0;
 
   constructor(mpa: number, menu: MenuItem<T>[]) {
@@ -282,6 +307,7 @@ class DietPlanner<T> {
     this.seasoning = menu.find(
       (item) => item.item === $item`Special Seasoning`
     );
+    this.whetStone = menu.find((item) => item.item === $item`whet stone`);
     this.mayoLookup = new Map<Item, MenuItem<T>>();
     if (mayoInstalled()) {
       for (const mayo of [Mayo.flex, Mayo.zapine]) {
@@ -362,6 +388,7 @@ class DietPlanner<T> {
     const defaultModifiers = {
       forkMug: false,
       seasoning: this.seasoning ? helpers.includes(this.seasoning) : false,
+      whetStone: this.whetStone ? helpers.includes(this.whetStone) : false,
       mayoflex: this.mayoLookup.size
         ? helpers.some((item) => item.item === Mayo.flex)
         : false,
@@ -389,6 +416,14 @@ class DietPlanner<T> {
         mallPrice($item`Special Seasoning`)
     ) {
       helpers.push(this.seasoning);
+    }
+
+    if (
+      this.whetStone &&
+      itemType(menuItem.item) === "food" &&
+      this.mpa > mallPrice($item`whet stone`)
+    ) {
+      helpers.push(this.whetStone);
     }
 
     const forkMug =
@@ -751,6 +786,7 @@ class DietEntry<T> {
           expectedAdventures(this.menuItems[this.menuItems.length - 1].item, {
             forkMug: fork || mug,
             seasoning: items.includes($item`Special Seasoning`),
+            whetStone: items.includes($item`whet stone`),
             mayoflex: items.includes(Mayo.flex),
             refinedPalate: diet.refinedPalate,
             garish: diet.garish,
